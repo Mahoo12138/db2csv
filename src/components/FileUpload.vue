@@ -129,7 +129,6 @@ const showError = (message: string) => {
     >
       <v-card-text 
         class="upload-area text-center"
-        @click="triggerFileSelect"
         @dragover="handleDragOver"
         @dragleave="handleDragLeave"
         @drop="handleDrop"
