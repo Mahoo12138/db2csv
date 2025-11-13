@@ -1,16 +1,17 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import vuetify from 'vite-plugin-vuetify'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [vue({
-    template: {
-      compilerOptions: {
-        // 所有以 mdui- 开头的标签名都是 mdui 组件
-        isCustomElement: (tag) => tag.startsWith('mdui-'),
-      },
-    },
-  }),],
+  plugins: [
+    vue(),
+    // 自动导入 Vuetify 组件和样式
+    vuetify({
+      autoImport: true,
+      styles: 'sass',
+    })
+  ],
   // 配置静态资源处理
   server: {
     // 设置适当的响应头以支持WebAssembly
@@ -30,5 +31,9 @@ export default defineConfig({
     },
     // 禁用WebAssembly的内联
     assetsInlineLimit: 0,
+  },
+  // 确保 Vuetify 的样式能正确加载
+  define: {
+    'process.env.DEBUG': 'false',
   },
 })

@@ -1,151 +1,233 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 
 // 定义属性
-const props = defineProps<{
-  tables: string[],
-  selectedTable: string
-}>()
+const props = defineProps({
+  tables: {
+    type: Array as () => string[],
+    required: true,
+    default: () => []
+  },
+  selectedTable: {
+    type: String,
+    required: true,
+    default: ''
+  },
+  loading: {
+    type: Boolean,
+    required: false,
+    default: false
+  }
+})
 
 // 定义事件
-const emit = defineEmits<{
-  'table-selected': [table: string]
-}>()
+const emit = defineEmits(['table-selected'])
 
-// 本地选中的表
-const localSelectedTable = ref(props.selectedTable)
+// 搜索查询
+const searchQuery = ref('')
 
-// 监听props变化
-watch(() => props.selectedTable, (newVal) => {
-  localSelectedTable.value = newVal
+// 过滤后的表列表
+const filteredTables = computed(() => {
+  if (!searchQuery.value) return props.tables
+  
+  const query = searchQuery.value.toLowerCase()
+  return props.tables.filter(table => 
+    table.toLowerCase().includes(query)
+  )
 })
 
 // 处理表选择
 const handleTableSelect = (table: string) => {
-  localSelectedTable.value = table
   emit('table-selected', table)
 }
 
-// 判断表是否被选中
-const isTableSelected = (table: string): boolean => {
-  return localSelectedTable.value === table
+// 监听表列表变化，清空搜索
+watch(() => props.tables, () => {
+  searchQuery.value = ''
+}, { deep: true })
+
+// 滚动到选中项
+const scrollToSelected = () => {
+  if (!props.selectedTable) return
+  
+  setTimeout(() => {
+    const element = document.getElementById(`table-${props.selectedTable}`)
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }, 100)
 }
+
+// 监听选中表变化，滚动到选中项
+watch(() => props.selectedTable, scrollToSelected)
 </script>
 
 <template>
-  <div class="table-selector-container">
-    <h3>选择要转换的表</h3>
-    <div class="table-options">
-      <button
-        v-for="table in tables"
-        :key="table"
-        :class="['table-button', { 'selected': isTableSelected(table) }]"
-        @click="handleTableSelect(table)"
+  <div class="table-selector">
+    <!-- 搜索框 -->
+    <v-container fluid class="p-4">
+      <v-text-field
+        v-model="searchQuery"
+        label="搜索表"
+        placeholder="输入表名查找..."
+        density="compact"
+        variant="outlined"
+        :disabled="loading || tables.length === 0"
       >
-        {{ table }}
-      </button>
-    </div>
-    <div v-if="localSelectedTable" class="selected-info">
-      当前选择: <strong>{{ localSelectedTable }}</strong>
+        <template v-slot:prepend-inner>
+          <v-icon>mdi-magnify</v-icon>
+        </template>
+        <template v-slot:append-inner v-if="searchQuery">
+          <v-btn 
+            icon 
+            @click="searchQuery = ''" 
+            size="small"
+            :disabled="loading"
+          >
+            <v-icon size="small">mdi-close-circle-outline</v-icon>
+          </v-btn>
+        </template>
+      </v-text-field>
+    </v-container>
+    
+    <!-- 表格列表容器 -->
+    <div class="table-list-container">
+      <!-- 加载状态 -->
+      <div v-if="loading" class="loading-state">
+        <v-progress-circular indeterminate size="40" color="primary"></v-progress-circular>
+        <p class="mt-2 text-subtitle-2">加载表列表...</p>
+      </div>
+      <!-- 空状态 -->
+      <div v-else-if="tables.length === 0" class="empty-state">
+        <v-icon name="mdi-table-off" size="40" class="mb-2 text-surface-variant"></v-icon>
+        <p class="text-subtitle-2">未找到数据表</p>
+      </div>
+      <!-- 搜索无结果状态 -->
+      <div v-else-if="searchQuery && filteredTables.length === 0" class="search-empty-state">
+        <v-icon name="mdi-alert-circle" size="40" class="mb-2 text-surface-variant"></v-icon>
+        <p class="text-subtitle-2">没有找到匹配的表</p>
+      </div>
+      <!-- 表格列表 -->
+      <v-list v-else class="table-list" density="compact">
+        <v-list-item 
+          v-for="table in filteredTables" 
+          :key="table"
+          :id="`table-${table}`"
+          :class="{
+            'selected': selectedTable === table
+          }"
+          @click="handleTableSelect(table)"
+          :color="selectedTable === table ? 'primary-container' : ''"
+          :prepend-icon="selectedTable === table ? 'mdi-check' : 'mdi-table'
+          "
+          :prepend-icon-color="selectedTable === table ? 'primary' : ''"
+          class="transition-all duration-200"
+        >
+          <v-list-item-title class="truncate">{{ table }}</v-list-item-title>
+          <v-tooltip 
+            v-if="selectedTable === table"
+            text="已选择"
+            location="right"
+            origin="center right"
+            transition="v-tooltip-transition"
+          >
+            <v-btn
+              icon
+              size="small"
+              color="primary"
+              variant="text"
+            >
+              <v-icon size="small">mdi-check-circle</v-icon>
+            </v-btn>
+          </v-tooltip>
+        </v-list-item>
+      </v-list>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* 表选择器容器 */
-.table-selector-container {
-  margin: 20px 0;
-  padding: 25px;
-  background-color: white;
-  border-radius: 12px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
-  animation: fadeIn 0.3s ease;
-}
-
-/* 标题样式 */
-h3 {
-  margin-top: 0;
-  color: #333;
-  margin-bottom: 15px;
-  font-size: 18px;
-  font-weight: 600;
-}
-
-/* 表选项容器 */
-.table-options {
+/* 基础样式 */
+.table-selector {
+  width: 100%;
+  height: 100%;
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 15px;
+  flex-direction: column;
 }
 
-/* 表按钮样式 */
-.table-button {
-  padding: 10px 18px;
-  background-color: white;
-  border: 2px solid #e0e0e0;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  font-size: 14px;
-  font-weight: 500;
-  outline: none;
+/* 表格列表容器 */
+.table-list-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 4px 8px;
 }
 
-.table-button:hover {
-  background-color: #e8f5e9;
-  border-color: #4caf50;
-  transform: translateY(-1px);
+/* 加载状态 */
+.loading-state,
+.empty-state,
+.search-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  text-align: center;
+  min-height: 150px;
 }
 
-.table-button.selected {
-  background-color: #4caf50;
-  color: white;
-  border-color: #4caf50;
-  box-shadow: 0 2px 8px rgba(76, 175, 80, 0.3);
+/* 表格列表 */
+.table-list {
+  padding: 0;
 }
 
-/* 选中信息 */
-.selected-info {
-  font-size: 14px;
-  color: #666;
-  margin-top: 15px;
-  padding: 12px 16px;
-  background-color: #f8f9fa;
-  border-radius: 8px;
-  border-left: 4px solid #4caf50;
+/* 选中项样式增强 */
+.selected {
+  background-color: var(--v-primary-container);
 }
 
-.selected-info strong {
-  color: #4caf50;
-  font-weight: 600;
+/* 列表项悬停效果 */
+.v-list-item:hover:not(.selected) {
+  background-color: var(--v-surface-variant);
 }
 
-/* 动画效果 */
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+/* 过渡动画 */
+.transition-all {
+  transition-property: all;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* 响应式设计 */
-@media (max-width: 768px) {
-  .table-selector-container {
-    padding: 20px;
+.duration-200 {
+  transition-duration: 200ms;
+}
+
+/* 自定义滚动条 */
+.table-list-container::-webkit-scrollbar {
+  width: 4px;
+}
+
+.table-list-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.table-list-container::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 2px;
+}
+
+.table-list-container::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.3);
+}
+
+/* 响应式调整 */
+@media (max-width: 600px) {
+  .table-list-container {
+    padding: 0 2px 4px;
   }
   
-  h3 {
-    font-size: 16px;
-  }
-  
-  .table-options {
-    gap: 8px;
-  }
-  
-  .table-button {
-    padding: 8px 14px;
-    font-size: 13px;
-    flex: 1 0 auto;
-    text-align: center;
+  .loading-state,
+  .empty-state,
+  .search-empty-state {
+    padding: 1.5rem 1rem;
   }
 }
 </style>
