@@ -1,15 +1,10 @@
 <script setup lang="ts">
 // 导入路由视图组件
-// Vuetify 导入
-import { useTheme } from 'vuetify'
 
-// Vuetify 主题管理
-const theme = useTheme()
 </script>
 
 <template>
   <v-app>
-    <!-- 路由视图，用于展示不同页面 -->
     <router-view />
   </v-app>
 </template>

@@ -3,81 +3,88 @@ import { ref, computed, watch, onMounted } from 'vue'
 
 // 定义字段映射类型
 interface FieldMapping {
-  source: string
-  target: string
-  include: boolean
+  originalName: string
+  outputName: string
+  included: boolean
+}
+
+// 列信息接口
+interface ColumnInfo {
+  name: string
+  type: string
+  notnull?: boolean
+  pk?: boolean
 }
 
 // 定义属性
 const props = defineProps({
-  tableColumns: {
-    type: Array as () => string[],
+  columns: {
+    type: Array as () => ColumnInfo[],
     default: () => []
   },
-  selectedTable: {
-    type: String,
-    default: ''
-  },
-  loading: {
-    type: Boolean,
-    default: false
+  mappings: {
+    type: Array as () => FieldMapping[],
+    default: () => []
   }
 })
 
 // 定义事件
-const emit = defineEmits(['mappings-changed'])
+const emit = defineEmits(['update-mappings'])
 
 // 主题相关已移除
 
-// 字段映射状态
-const mappings = ref<FieldMapping[]>([])
-// 全选状态
-const selectAll = ref(false)
 // 过滤条件
 const filterQuery = ref('')
 // 排序字段
-const sortField = ref<keyof FieldMapping>('source')
+const sortField = ref<keyof FieldMapping>('originalName')
 // 排序方向
 const sortDirection = ref<'asc' | 'desc'>('asc')
+// 全选状态
+const selectAll = ref(false)
 
-// 初始化映射
-const initializeMappings = () => {
-  if (!props.tableColumns || props.tableColumns.length === 0) {
-    mappings.value = []
-    return
-  }
-
-  // 创建映射
-  const newMappings: FieldMapping[] = props.tableColumns.map(column => ({
-    source: column,
-    target: column,
-    include: true
-  }))
-
-  mappings.value = newMappings
+// 监听外部mappings变化
+watch(() => props.mappings, (newMappings) => {
   updateSelectAll()
-  emitMappings()
-}
+}, { deep: true, immediate: true })
+
+// 监听列变化，创建默认映射
+watch(() => props.columns, (newColumns) => {
+  if (newColumns && newColumns.length > 0 && (!props.mappings || props.mappings.length === 0)) {
+    const defaultMappings: FieldMapping[] = newColumns.map(column => ({
+      originalName: column.name,
+      outputName: column.name,
+      included: true
+    }))
+    emit('update-mappings', defaultMappings)
+  }
+}, { deep: true, immediate: true })
 
 // 更新映射
-const updateMapping = (index: number, field: 'target' | 'include', value: string | boolean) => {
-  if (index >= 0 && index < mappings.value.length) {
-    if (field === 'target' && typeof value === 'string') {
-      mappings.value[index].target = value
-    } else if (field === 'include' && typeof value === 'boolean') {
-      mappings.value[index].include = value
+const updateMapping = (index: number, field: 'outputName' | 'included', value: string | boolean) => {
+  if (index >= 0 && index < filteredMappings.value.length) {
+    const mappingIndex = props.mappings.findIndex(m => m.originalName === filteredMappings.value[index].originalName)
+    if (mappingIndex >= 0) {
+      const newMappings = [...props.mappings]
+      if (field === 'outputName' && typeof value === 'string') {
+        newMappings[mappingIndex].outputName = value
+      } else if (field === 'included' && typeof value === 'boolean') {
+        newMappings[mappingIndex].included = value
+      }
+      emit('update-mappings', newMappings)
     }
-    updateSelectAll()
-    emitMappings()
   }
 }
 
 // 切换全选
 const toggleAll = () => {
+  const newMappings = [...props.mappings]
   filteredMappings.value.forEach(mapping => {
-    mapping.include = selectAll.value
+    const index = newMappings.findIndex(m => m.originalName === mapping.originalName)
+    if (index >= 0) {
+      newMappings[index].included = selectAll.value
+    }
   })
-  emitMappings()
+  emit('update-mappings', newMappings)
 }
 
 // 更新全选状态
@@ -86,7 +93,7 @@ const updateSelectAll = () => {
     selectAll.value = false
     return
   }
-  selectAll.value = filteredMappings.value.every(mapping => mapping.include)
+  selectAll.value = filteredMappings.value.every(mapping => mapping.included)
 }
 
 // 切换排序字段
@@ -116,35 +123,24 @@ const filteredMappings = computed(() => {
   
   const query = filterQuery.value.toLowerCase()
   return sortedMappings.value.filter(mapping => 
-    mapping.source.toLowerCase().includes(query) || 
-    mapping.target.toLowerCase().includes(query)
+    mapping.originalName.toLowerCase().includes(query) || 
+    mapping.outputName.toLowerCase().includes(query)
   )
 })
 
 // 排序后的映射
 const sortedMappings = computed(() => {
-  const sorted = [...mappings.value]
+  const sorted = [...props.mappings]
   return sorted.sort((a, b) => {
     let comparison = 0
-    if (sortField.value === 'source') {
-      comparison = a.source.localeCompare(b.source)
-    } else if (sortField.value === 'target') {
-      comparison = a.target.localeCompare(b.target)
+    if (sortField.value === 'originalName') {
+      comparison = a.originalName.localeCompare(b.originalName)
+    } else if (sortField.value === 'outputName') {
+      comparison = a.outputName.localeCompare(b.outputName)
     }
     return sortDirection.value === 'asc' ? comparison : -comparison
   })
 })
-
-// 发射映射变更事件
-const emitMappings = () => {
-  const activeMappings = mappings.value.filter(mapping => mapping.include)
-  emit('mappings-changed', activeMappings)
-}
-
-// 监听表格列变化
-watch(() => props.tableColumns, () => {
-  initializeMappings()
-}, { deep: true })
 
 // 监听过滤条件变化，更新全选状态
 watch(() => filterQuery.value, () => {
@@ -152,14 +148,9 @@ watch(() => filterQuery.value, () => {
 })
 
 // 监听过滤后映射的包含状态变化
-watch(() => filteredMappings.value.map(m => m.include), () => {
+watch(() => filteredMappings.value.map(m => m.included), () => {
   updateSelectAll()
 }, { deep: true })
-
-// 初始化
-onMounted(() => {
-  initializeMappings()
-})
 </script>
 
 <template>
@@ -215,7 +206,7 @@ onMounted(() => {
 
       <!-- 空状态 - 无表格列 -->
       <div
-        v-else-if="!props.tableColumns || props.tableColumns.length === 0"
+        v-else-if="!props.columns || props.columns.length === 0"
         class="empty-state"
       >
         <v-container fluid class="h-full flex flex-col items-center justify-center text-center">
@@ -265,20 +256,20 @@ onMounted(() => {
               </th>
               <th
                 class="source-column cursor-pointer"
-                @click="changeSortField('source')"
+                @click="changeSortField('originalName')"
               >
                 <div class="sortable-header flex items-center gap-2">
                   <span class="font-semibold text-sm text-on-surface-variant">源字段 (数据库)</span>
-                  <v-icon :name="getSortIcon('source')" class="sort-icon text-on-surface-variant" size="small" />
+                  <v-icon :name="getSortIcon('originalName')" class="sort-icon text-on-surface-variant" size="small" />
                 </div>
               </th>
               <th
                 class="target-column cursor-pointer"
-                @click="changeSortField('target')"
+                @click="changeSortField('outputName')"
               >
                 <div class="sortable-header flex items-center gap-2">
                   <span class="font-semibold text-sm text-on-surface-variant">目标字段 (CSV)</span>
-                  <v-icon :name="getSortIcon('target')" class="sort-icon text-on-surface-variant" size="small" />
+                  <v-icon :name="getSortIcon('outputName')" class="sort-icon text-on-surface-variant" size="small" />
                 </div>
               </th>
               <th class="actions-column"></th>
@@ -287,26 +278,26 @@ onMounted(() => {
           <tbody>
             <tr
               v-for="(mapping, index) in filteredMappings"
-              :key="index"
+              :key="mapping.originalName"
               class="table-row"
             >
               <td class="checkbox-column">
                 <v-checkbox
-                  v-model="mapping.include"
-                  @change="updateMapping(index, 'include', mapping.include)"
+                  v-model="mapping.included"
+                  @change="updateMapping(index, 'included', mapping.included)"
                   :disabled="loading"
                   density="compact"
                 />
               </td>
               <td class="source-column">
-                <div class="source-field text-body-1 truncate" :title="mapping.source">
-                  {{ mapping.source }}
+                <div class="source-field text-body-1 truncate" :title="mapping.originalName">
+                  {{ mapping.originalName }}
                 </div>
               </td>
               <td class="target-column">
                 <v-text-field
-                  v-model="mapping.target"
-                  @update:modelValue="updateMapping(index, 'target', $event)"
+                  v-model="mapping.outputName"
+                  @update:modelValue="updateMapping(index, 'outputName', $event)"
                   density="compact"
                   variant="outlined"
                   :disabled="loading"

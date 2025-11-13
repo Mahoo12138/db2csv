@@ -4,6 +4,7 @@ import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 // @ts-ignore
 import 'vuetify/styles'
+import '@mdi/font/css/materialdesignicons.css'
 
 import './style.css'
 import App from './App.vue'

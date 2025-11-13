@@ -162,10 +162,11 @@ const showError = (message: string) => {
             size="large"
             :ripple="false"
             @click.stop="triggerFileSelect"
-            class="mt-4"
+            class="mt-4 upload-button"
+            style="min-width: 200px; padding: 0.75rem 2rem;"
           >
             <v-icon left>mdi-folder-open</v-icon>
-            选择文件
+            <span>选择文件</span>
           </v-btn>
           
           <p class="text-caption text-opacity-60 mt-4">或者直接粘贴文件 (Ctrl+V)</p>
@@ -223,6 +224,8 @@ const showError = (message: string) => {
 /* 基础样式 */
 .file-upload-container {
   width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
@@ -230,11 +233,12 @@ const showError = (message: string) => {
 
 /* 上传区域 */
   .upload-area {
-    padding: 2.5rem;
+    padding: 3rem;
     cursor: pointer;
     position: relative;
     overflow: hidden;
     transition: all 0.3s ease;
+    border-radius: 12px;
   }
 
   .upload-area:hover {
@@ -314,6 +318,20 @@ const showError = (message: string) => {
   opacity: 0;
   cursor: pointer;
   z-index: 2;
+}
+
+/* 上传按钮样式 */
+.upload-button {
+  text-transform: none;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  transition: all 0.3s ease;
+}
+
+.upload-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
 }
 
 /* 装饰性背景元素 */
