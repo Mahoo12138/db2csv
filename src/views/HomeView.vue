@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from "vue";
 import FileUpload from "../components/FileUpload.vue";
 import FieldMapper from "../components/FieldMapper.vue";
 import DataPreview from "../components/DataPreview.vue";
+import ExportMapping from "../components/ExportMapping.vue";
 import SQLiteService from "../services/SQLiteService";
 import type { SQLiteInstance } from "../services/SQLiteService";
 import { CSVService } from "../services/CSVService";
@@ -172,6 +173,20 @@ const exportToCSV = async () => {
     isLoading.value = false;
   }
 };
+
+// 处理映射更新
+const handleMappingUpdate = (exportMappings: any[]) => {
+  // 将导出映射转换为字段映射格式
+  fieldMappings.value = exportMappings.map(mapping => ({
+    originalName: mapping.sqliteField,
+    outputName: mapping.csvColumn,
+    included: true // 默认包含所有映射
+  }));
+  
+  showNotification("映射配置已更新", "success");
+};
+
+
 
 // 切换主题
 const toggleTheme = () => {
@@ -415,7 +430,13 @@ onUnmounted(() => {
                 />
               </v-tabs-window-item>
               <v-tabs-window-item value="export">
-                <v-sheet class="pa-5" color="orange">数据导出</v-sheet>
+                <ExportMapping 
+                  :columns="tableColumns"
+                  :is-loading="isLoading"
+                  :database-instance="databaseInstance"
+                  :table-name="selectedTable"
+                  @update:mappings="handleMappingUpdate"
+                />
               </v-tabs-window-item>
             </v-tabs-window>
           </template>
