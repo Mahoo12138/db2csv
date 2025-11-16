@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import FileUpload from "../components/FileUpload.vue";
 import FieldMapper from "../components/FieldMapper.vue";
+import DataPreview from "../components/DataPreview.vue";
 import SQLiteService from "../services/SQLiteService";
 import type { SQLiteInstance } from "../services/SQLiteService";
 import { CSVService } from "../services/CSVService";
@@ -408,7 +409,10 @@ onUnmounted(() => {
 
             <v-tabs-window v-model="tab">
               <v-tabs-window-item value="preview">
-                <v-sheet class="pa-5" color="purple">数据预览</v-sheet>
+                <DataPreview 
+                  :database-instance="databaseInstance" 
+                  :table-name="selectedTable"
+                />
               </v-tabs-window-item>
               <v-tabs-window-item value="export">
                 <v-sheet class="pa-5" color="orange">数据导出</v-sheet>
