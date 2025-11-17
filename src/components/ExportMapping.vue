@@ -67,15 +67,25 @@
               variant="tonal"
               @click="addNewMapping"
               :disabled="!canAddMapping"
+              class="mr-2"
             >
               <v-icon left>mdi-plus</v-icon>
               添加映射
             </v-btn>
             <v-btn
+              color="info"
+              variant="text"
+              @click="groupByField = !groupByField"
+              :class="groupByField ? 'v-btn--active' : ''"
+              class="mr-2"
+            >
+              <v-icon left>{{ groupByField ? 'mdi-view-list' : 'mdi-view-module' }}</v-icon>
+              {{ groupByField ? '取消分组' : '按字段分组' }}
+            </v-btn>
+            <v-btn
               color="secondary"
               variant="text"
               @click="resetToDefault"
-              class="ml-2"
             >
               <v-icon left>mdi-refresh</v-icon>
               重置
@@ -86,35 +96,45 @@
         <!-- 映射表格 -->
         <v-data-table
           :headers="tableHeaders"
-          :items="filteredMappings"
+          :items="displayedMappings"
           :search="search"
           :items-per-page="itemsPerPage"
           :items-per-page-options="itemsPerPageOptions"
           hover
           class="elevation-1 mapping-table"
+          :group-by="groupByField ? groupBySqliteField : undefined"
         >
           <!-- SQLite字段列 -->
-          <template v-slot:item.sqliteField="{ item }">
-            <div class="d-flex align-center">
-              <v-icon 
-                v-if="item.isCustom" 
-                icon="mdi-plus-circle" 
-                color="success" 
-                size="small" 
-                class="mr-2"
-              ></v-icon>
-              <v-icon 
-                v-else 
-                icon="mdi-database" 
-                color="primary" 
-                size="small" 
-                class="mr-2"
-              ></v-icon>
-              <span :class="{ 'text-success': item.isCustom }">
-                {{ item.sqliteField }}
-              </span>
-            </div>
-          </template>
+      <template v-slot:item.sqliteField="{ item }">
+        <div class="d-flex align-center">
+          <v-icon 
+            v-if="item.isCustom" 
+            icon="mdi-tag" 
+            color="success" 
+            size="small" 
+            class="mr-2"
+          ></v-icon>
+          <v-icon 
+            v-else 
+            icon="mdi-database" 
+            color="primary" 
+            size="small" 
+            class="mr-2"
+          ></v-icon>
+          <span :class="{ 'text-success': item.isCustom }">
+            {{ item.sqliteField }}
+          </span>
+          <v-chip
+            v-if="!item.isCustom && getFieldUsageCount(item.sqliteField) > 1"
+            size="x-small"
+            color="warning"
+            variant="tonal"
+            class="ml-2"
+          >
+            第 {{ getFieldUsageIndex(item.sqliteField, item.id) }} 个
+          </v-chip>
+        </div>
+      </template>
 
           <!-- CSV列名列（可编辑） -->
           <template v-slot:item.csvColumn="{ item }">
@@ -134,6 +154,30 @@
             </v-text-field>
           </template>
 
+          <!-- 字段类型列 -->
+          <template v-slot:item.fieldType="{ item }">
+            <div class="d-flex align-center justify-center">
+              <v-chip
+                :color="item.isCustom ? 'success' : 'primary'"
+                size="small"
+                variant="tonal"
+              >
+                {{ item.isCustom ? '默认值字段' : '数据库字段' }}
+              </v-chip>
+              <v-tooltip v-if="item.isCustom && item.defaultValue" :text="`默认值: ${item.defaultValue}`" location="top">
+                <template v-slot:activator="{ props }">
+                  <v-icon
+                    v-bind="props"
+                    icon="mdi-information"
+                    size="small"
+                    color="info"
+                    class="ml-1"
+                  ></v-icon>
+                </template>
+              </v-tooltip>
+            </div>
+          </template>
+
           <!-- 数据类型列 -->
           <template v-slot:item.dataType="{ item }">
             <v-chip
@@ -143,6 +187,28 @@
             >
               {{ item.dataType }}
             </v-chip>
+          </template>
+
+          <!-- 使用情况列 -->
+          <template v-slot:item.usage="{ item }">
+            <div v-if="!item.isCustom" class="text-center">
+              <v-chip
+                size="small"
+                :color="getFieldUsageCount(item.sqliteField) > 1 ? 'warning' : 'success'"
+                variant="tonal"
+              >
+                {{ getFieldUsageCount(item.sqliteField) }} 次
+              </v-chip>
+            </div>
+            <div v-else class="text-center">
+              <v-chip
+                size="small"
+                color="info"
+                variant="tonal"
+              >
+                默认值
+              </v-chip>
+            </div>
           </template>
 
           <!-- 操作列 -->
@@ -183,11 +249,89 @@
         </v-data-table>
       </div>
     </v-card-text>
-
-
-
-
   </v-card>
+
+  <!-- 添加映射对话框 -->
+  <v-dialog v-model="addMappingDialog" max-width="500px">
+    <v-card>
+      <v-card-title class="d-flex align-center">
+        <v-icon icon="mdi-plus" color="primary" class="mr-2"></v-icon>
+        添加字段映射
+      </v-card-title>
+      
+      <v-card-text>
+        <v-radio-group v-model="mappingType" label="选择映射类型">
+          <v-radio label="数据库字段" value="database"></v-radio>
+          <v-radio label="默认值字段" value="custom"></v-radio>
+        </v-radio-group>
+        
+        <!-- 数据库字段选择 -->
+        <div v-if="mappingType === 'database'" class="mt-4">
+          <div class="mb-2 text-body-2 text-secondary">
+            可用字段数: {{ availableDatabaseFields.length }}
+          </div>
+          <v-select
+            v-model="selectedDatabaseField"
+            label="选择数据库字段"
+            :items="availableDatabaseFields"
+            item-title="name"
+            item-value="name"
+            variant="outlined"
+            density="compact"
+            clearable
+            :disabled="availableDatabaseFields.length === 0"
+          ></v-select>
+        </div>
+        
+        <!-- 默认值字段配置 -->
+        <div v-if="mappingType === 'custom'" class="mt-4">
+          <v-text-field
+            v-model="customColumnName"
+            label="列名"
+            placeholder="输入CSV列名"
+            variant="outlined"
+            density="compact"
+            :rules="[v => !!v || '列名不能为空']"
+          ></v-text-field>
+          <v-select
+            v-model="customFieldType"
+            label="字段类型"
+            :items="['TEXT', 'INTEGER', 'REAL', 'BOOLEAN']"
+            variant="outlined"
+            density="compact"
+            class="mt-2"
+          ></v-select>
+          <v-text-field
+            v-model="customDefaultValue"
+            label="默认值"
+            placeholder="输入默认值"
+            variant="outlined"
+            density="compact"
+            class="mt-2"
+          ></v-text-field>
+        </div>
+      </v-card-text>
+      
+      <v-card-actions>
+        <v-spacer></v-spacer>
+        <v-btn
+          color="secondary"
+          variant="text"
+          @click="cancelAddMapping"
+        >
+          取消
+        </v-btn>
+        <v-btn
+          color="primary"
+          variant="tonal"
+          @click="confirmAddMapping"
+          :disabled="!isValidMappingConfig"
+        >
+          添加
+        </v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
 </template>
 
 <script setup lang="ts">
@@ -199,8 +343,9 @@ interface MappingItem {
   sqliteField: string
   csvColumn: string
   dataType: string
-  isCustom: boolean
+  isCustom: boolean // true表示默认值字段，false表示数据库字段
   originalField?: string
+  defaultValue?: string
 }
 
 // 列信息接口
@@ -234,6 +379,13 @@ const page = ref(1)
 const itemsPerPage = ref(10)
 const mappings = ref<MappingItem[]>([])
 const isExporting = ref(false)
+const addMappingDialog = ref(false)
+const mappingType = ref<'database' | 'custom'>('database')
+const selectedDatabaseField = ref('')
+const customColumnName = ref('')  // 列名
+const customFieldType = ref<'TEXT' | 'INTEGER' | 'REAL' | 'BOOLEAN'>('TEXT')  // 字段类型
+const customDefaultValue = ref('')  // 默认值
+const groupByField = ref(false)
 
 // 分页选项
 const itemsPerPageOptions = [
@@ -247,7 +399,9 @@ const itemsPerPageOptions = [
 const tableHeaders = [
   { key: 'sqliteField', title: 'SQLite字段', sortable: true },
   { key: 'csvColumn', title: 'CSV列名', sortable: true },
+  { key: 'fieldType', title: '字段类型', sortable: false, align: 'center' as const },
   { key: 'dataType', title: '数据类型', sortable: true },
+  { key: 'usage', title: '使用情况', sortable: false, align: 'center' as const },
   { key: 'actions', title: '操作', sortable: false, align: 'center' as const }
 ]
 
@@ -260,6 +414,17 @@ const filteredMappings = computed(() => {
     mapping.sqliteField.toLowerCase().includes(query) || 
     mapping.csvColumn.toLowerCase().includes(query)
   )
+})
+
+const displayedMappings = computed(() => {
+  return filteredMappings.value
+})
+
+const groupBySqliteField = computed(() => {
+  return {
+    key: 'sqliteField',
+    order: 'asc'
+  }
 })
 
 const pageCount = computed(() => {
@@ -278,6 +443,28 @@ const canAddMapping = computed(() => {
   return props.columns && props.columns.length > 0
 })
 
+const isValidMappingConfig = computed(() => {
+  if (mappingType.value === 'database') {
+    return selectedDatabaseField.value !== ''
+  } else {
+    return customColumnName.value.trim() !== '' && isValidCsvColumn(customColumnName.value.trim())
+  }
+})
+
+const availableDatabaseFields = computed(() => {
+  if (!props.columns || props.columns.length === 0) {
+    return []
+  }
+  
+  // 返回所有数据库字段，不再限制唯一性
+  return props.columns.map(col => ({
+    name: col.name,
+    type: col.type,
+    // 添加使用次数信息（只统计数据库字段）
+    usageCount: mappings.value.filter(m => m.sqliteField === col.name && !m.isCustom).length
+  }))
+})
+
 // 方法定义
 const generateId = (): string => {
   return Date.now().toString() + Math.random().toString(36).substr(2, 9)
@@ -289,14 +476,15 @@ const initializeMappings = () => {
     return
   }
 
-  // 根据列信息创建默认映射
+  // 根据列信息创建默认映射（保持原有逻辑，不自动添加序号）
   mappings.value = props.columns.map(column => ({
     id: generateId(),
     sqliteField: column.name,
     csvColumn: column.name, // 默认CSV列名与SQLite字段名相同
     dataType: column.type,
-    isCustom: false,
-    originalField: column.name
+    isCustom: false, // false表示数据库字段
+    originalField: column.name,
+    defaultValue: undefined
   }))
 }
 
@@ -340,6 +528,20 @@ const getDataTypeColor = (dataType: string): string => {
   return 'grey'
 }
 
+// 获取字段使用次数（只统计数据库字段）
+const getFieldUsageCount = (sqliteField: string): number => {
+  return mappings.value.filter(m => m.sqliteField === sqliteField && !m.isCustom).length
+}
+
+// 获取字段使用序号（只统计数据库字段）
+const getFieldUsageIndex = (sqliteField: string, mappingId: string): number => {
+  const fieldMappings = mappings.value
+    .filter(m => m.sqliteField === sqliteField && !m.isCustom)
+    .sort((a, b) => a.id.localeCompare(b.id))
+  
+  return fieldMappings.findIndex(m => m.id === mappingId) + 1
+}
+
 const updateMapping = (item: MappingItem, field: keyof MappingItem, value: any) => {
   const index = mappings.value.findIndex(m => m.id === item.id)
   if (index >= 0) {
@@ -349,16 +551,55 @@ const updateMapping = (item: MappingItem, field: keyof MappingItem, value: any) 
 }
 
 const addNewMapping = () => {
-  const newMapping: MappingItem = {
-    id: generateId(),
-    sqliteField: `custom_field_${mappings.value.length + 1}`,
-    csvColumn: `custom_column_${mappings.value.length + 1}`,
-    dataType: 'TEXT',
-    isCustom: true
+  // 重置对话框状态
+  mappingType.value = 'database'
+  selectedDatabaseField.value = ''
+  customColumnName.value = ''
+  customFieldType.value = 'TEXT'
+  customDefaultValue.value = ''
+  addMappingDialog.value = true
+}
+
+const confirmAddMapping = () => {
+  if (mappingType.value === 'database' && selectedDatabaseField.value) {
+    // 添加数据库字段映射
+    const column = props.columns.find(col => col.name === selectedDatabaseField.value)
+    if (column) {
+      const usageCount = getFieldUsageCount(column.name)
+      const suffix = usageCount > 0 ? `_${usageCount + 1}` : ''
+      
+      const newMapping: MappingItem = {
+        id: generateId(),
+        sqliteField: column.name,
+        csvColumn: column.name + suffix,
+        dataType: column.type,
+        isCustom: false, // false表示数据库字段
+        originalField: column.name,
+        defaultValue: undefined
+      }
+      mappings.value.push(newMapping)
+      emit('update:mappings', mappings.value)
+    }
+  } else if (mappingType.value === 'custom' && customColumnName.value.trim()) {
+    // 添加默认值字段映射，使用列名、字段类型和默认值
+    const newMapping: MappingItem = {
+      id: generateId(),
+      sqliteField: customColumnName.value.trim(), // 使用列名作为内部标识
+      csvColumn: customColumnName.value.trim(), // CSV列名
+      dataType: customFieldType.value, // 选择的字段类型
+      isCustom: true, // true表示默认值字段
+      defaultValue: customDefaultValue.value.trim() || ''
+    }
+    mappings.value.push(newMapping)
+    emit('update:mappings', mappings.value)
   }
   
-  mappings.value.push(newMapping)
-  emit('update:mappings', mappings.value)
+  // 关闭对话框
+  addMappingDialog.value = false
+}
+
+const cancelAddMapping = () => {
+  addMappingDialog.value = false
 }
 
 const removeMapping = (item: MappingItem) => {
@@ -378,8 +619,6 @@ const resetToDefault = () => {
   initializeMappings()
   emit('update:mappings', mappings.value)
 }
-
-
 
 const exportToCSV = async () => {
   if (!props.databaseInstance || !props.tableName || validMappings.value.length === 0) {
@@ -401,7 +640,14 @@ const exportToCSV = async () => {
     const csvData = data.map((row: any) => {
       const csvRow: any = {}
       validMappings.value.forEach(mapping => {
-        const value = row[mapping.sqliteField]
+        let value: any
+        if (mapping.isCustom) {
+          // 默认值字段使用设置的默认值
+          value = mapping.defaultValue || ''
+        } else {
+          // 数据库字段使用实际数据
+          value = row[mapping.sqliteField]
+        }
         csvRow[mapping.csvColumn] = formatValueForCSV(value, mapping.dataType)
       })
       return csvRow
@@ -507,8 +753,6 @@ onMounted(() => {
   max-width: 200px;
 }
 
-
-
 :deep(.v-data-table__th) {
   background-color: rgba(var(--v-theme-primary), 0.05);
   font-weight: 600 !important;
@@ -522,7 +766,5 @@ onMounted(() => {
   .csv-column-input {
     max-width: 150px;
   }
-  
-
 }
 </style>
